@@ -52,40 +52,6 @@ python3 column_store.py
 
 ---
 
-## Expected Output
-
-```
-=== Big Data Management - Column Store Query ===
-Matric     : U2221398J
-Target Year: 2018
-Start Month: 09
-Towns      : BUKIT PANJANG, CHOA CHU KANG, CLEMENTI, WOODLANDS, YISHUN
-
-Loaded 259237 records into column store.
-Output written to ScanResult_U2221398J.csv (568 valid (x,y) pairs found).
-Done.
-```
-
----
-
-## Output Format
-
-The output CSV `ScanResult_U2221398J.csv` contains the following columns:
-
-| Column | Description |
-|---|---|
-| (x, y) | The query pair; ordered by increasing x, then increasing y |
-| Year | Year of the matched record (YYYY) |
-| Month | Month of the matched record (MM) |
-| Town | Town of the matched HDB flat |
-| Block | Block number of the matched HDB flat |
-| Floor_Area | Floor area in square meters |
-| Flat_Model | Flat model (e.g. Standard, Improved, Apartment) |
-| Lease_Commence_Date | Year the flat lease commenced |
-| Price_Per_Square_Meter | Minimum price per sqm, rounded to nearest integer |
-
----
-
 ## How It Works
 
 1. **Column Store Loading:** All records from the CSV are loaded into a Python dictionary where each key is a column name and each value is a list of all entries in that column. No external libraries (e.g. pandas) are used.
