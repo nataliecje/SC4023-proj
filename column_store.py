@@ -38,9 +38,6 @@ MONTH_MAP = {
 }
 
 
-# ─────────────────────────────────────────────
-# STEP 1: LOAD DATA INTO COLUMN STORE
-# ─────────────────────────────────────────────
 def parse_date(date_str):
     date_str = date_str.strip()
     parts = date_str.split("-")
@@ -97,10 +94,6 @@ def load_column_store(filepath):
     return column_store
 
 
-# ─────────────────────────────────────────────
-# STEP 2: COMPUTE MONTH RANGE GIVEN x
-# ─────────────────────────────────────────────
-
 def get_month_range(x):
     """
     Given x (number of months), returns a set of (year, month) tuples
@@ -118,10 +111,6 @@ def get_month_range(x):
             year += 1
     return months
 
-
-# ─────────────────────────────────────────────
-# STEP 3: SCAN COLUMN STORE FOR A GIVEN (x, y)
-# ─────────────────────────────────────────────
 
 def scan(column_store, valid_months_set, y):
     """
@@ -166,10 +155,6 @@ def scan(column_store, valid_months_set, y):
     return best_idx, best_price_sqm
 
 
-# ─────────────────────────────────────────────
-# STEP 4: MAIN QUERY LOOP
-# ─────────────────────────────────────────────
-
 def run_queries(column_store):
     """
     Iterates over all (x, y) pairs in the required order:
@@ -210,10 +195,6 @@ def run_queries(column_store):
     return results
 
 
-# ─────────────────────────────────────────────
-# STEP 5: WRITE OUTPUT CSV
-# ─────────────────────────────────────────────
-
 def write_output(results, filepath):
     """
     Writes the query results to the output CSV file.
@@ -233,10 +214,6 @@ def write_output(results, filepath):
 
     print(f"Output written to {filepath} ({len(results)} valid (x,y) pairs found).")
 
-
-# ─────────────────────────────────────────────
-# ENTRY POINT
-# ─────────────────────────────────────────────
 
 if __name__ == "__main__":
     print("=== Big Data Management - Column Store Query ===")
