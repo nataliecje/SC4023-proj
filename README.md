@@ -5,19 +5,6 @@ This program implements a **column-store** data management system to query HDB r
 
 ---
 
-## Query Parameters (Matriculation Number: U2221398J)
-
-| Parameter | Value |
-|---|---|
-| Target Year | 2018 |
-| Commencing Month | September (09) |
-| Towns | BUKIT PANJANG, CLEMENTI, CHOA CHU KANG, WOODLANDS, YISHUN |
-| x range | 1 to 8 (months) |
-| y range | 80 to 150 (square meters) |
-| Price threshold | ≤ 4725 SGD/m² |
-
----
-
 ## Requirements
 
 - Python 3.x (no external libraries required)
