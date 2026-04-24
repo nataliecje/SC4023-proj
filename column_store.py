@@ -13,6 +13,7 @@ Query Parameters:
 """
 
 import csv
+from collections import defaultdict
 
 # ─────────────────────────────────────────────
 # CONFIGURATION (derived from matric U2221398J)
@@ -100,15 +101,18 @@ def load_column_store(filepath):
     col_resale_price   = []
     col_year           = []
     col_month          = []
+    month_town_index   = defaultdict(list)
 
     with open(filepath, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
             month_raw = row["month"].strip()
             year, month = parse_date(month_raw)
+            town = row["town"].strip().upper()
+            row_idx = len(col_year)
 
             col_month_raw.append(month_raw)
-            col_town.append(row["town"].strip().upper())
+            col_town.append(town)
             col_flat_type.append(row["flat_type"].strip())
             col_block.append(row["block"].strip())
             col_street_name.append(row["street_name"].strip())
@@ -119,6 +123,7 @@ def load_column_store(filepath):
             col_resale_price.append(float(row["resale_price"].strip()))
             col_year.append(year)
             col_month.append(month)
+            month_town_index[(year, month, town)].append(row_idx)
 
     column_store = {
         "month_raw"      : col_month_raw,
@@ -133,6 +138,7 @@ def load_column_store(filepath):
         "resale_price"   : col_resale_price,
         "year"           : col_year,
         "month"          : col_month,
+        "month_town_index": month_town_index,
     }
 
     print(f"Loaded {len(col_year)} records into column store.")
@@ -157,85 +163,99 @@ def get_month_range(x):
     return months
 
 
-def scan(column_store, valid_months_set, y):
+def get_candidate_indices(month_town_index, valid_months_set):
     """
-    Scans all columns to find rows matching:
-      - (year, month) in valid_months_set
-      - town in TOWNS
-      - floor_area >= y
+    Uses the month/town index to gather only the row indices that can match
+    a given x-month query window.
+    """
+    candidate_indices = []
+    for year, month in sorted(valid_months_set):
+        for town in sorted(TOWNS):
+            candidate_indices.extend(month_town_index.get((year, month, town), []))
+    return candidate_indices
 
-    Returns the index of the row with the minimum price/sqm,
-    and the minimum price/sqm value. Returns (None, None) if no match.
+
+def build_result(column_store, x, y, best_idx, rounded_price_sqm):
     """
-    col_year         = column_store["year"]
-    col_month        = column_store["month"]
-    col_town         = column_store["town"]
+    Formats one output row using the matched record index.
+    """
+    return {
+        "xy"         : f"({x}, {y})",
+        "year"       : f"{column_store['year'][best_idx]:04d}",
+        "month"      : f"{column_store['month'][best_idx]:02d}",
+        "town"       : column_store["town"][best_idx],
+        "block"      : column_store["block"][best_idx],
+        "floor_area" : int(column_store["floor_area"][best_idx]),
+        "flat_model" : column_store["flat_model"][best_idx],
+        "lease"      : column_store["lease_commence"][best_idx],
+        "price_sqm"  : rounded_price_sqm,
+    }
+
+
+def run_queries_for_x(column_store, x, candidate_indices):
+    """
+    Reuses the same candidate set across all y values for one x.
+    Candidates are ordered by descending floor area so that, while y moves
+    from 150 down to 80, newly eligible rows are added only once.
+    """
     col_floor_area   = column_store["floor_area"]
     col_resale_price = column_store["resale_price"]
+    sorted_candidates = sorted(
+        candidate_indices,
+        key=lambda idx: (-col_floor_area[idx], idx),
+    )
 
-    n = len(col_year)
+    best_idx = None
+    best_key = None
+    next_candidate = 0
+    results_by_y = {}
 
-    best_idx       = None
-    best_price_sqm = None
+    for y in reversed(Y_RANGE):
+        while (
+            next_candidate < len(sorted_candidates)
+            and col_floor_area[sorted_candidates[next_candidate]] >= y
+        ):
+            idx = sorted_candidates[next_candidate]
+            price_sqm = col_resale_price[idx] / col_floor_area[idx]
+            candidate_key = (price_sqm, idx)
 
-    for i in range(n):
-        # Filter 1: time range
-        if (col_year[i], col_month[i]) not in valid_months_set:
+            # Tie-break by original row index to preserve the old output.
+            if best_key is None or candidate_key < best_key:
+                best_key = candidate_key
+                best_idx = idx
+
+            next_candidate += 1
+
+        if best_idx is None:
             continue
-        # Filter 2: town
-        if col_town[i] not in TOWNS:
-            continue
-        # Filter 3: floor area
-        if col_floor_area[i] < y:
+        if best_key[0] > PRICE_THRESHOLD:
             continue
 
-        # Compute price per square meter
-        price_sqm = col_resale_price[i] / col_floor_area[i]
+        results_by_y[y] = build_result(
+            column_store,
+            x,
+            y,
+            best_idx,
+            round(best_key[0]),
+        )
 
-        # Track minimum
-        if best_price_sqm is None or price_sqm < best_price_sqm:
-            best_price_sqm = price_sqm
-            best_idx = i
-
-    return best_idx, best_price_sqm
+    return [results_by_y[y] for y in Y_RANGE if y in results_by_y]
 
 
 def run_queries(column_store):
     """
     Iterates over all (x, y) pairs in the required order:
     increasing x, then increasing y within the same x.
-    Runs scan for each, collects valid results (min price/sqm <= PRICE_THRESHOLD).
+    For each x, it first gathers candidate rows via the month/town index,
+    then reuses that candidate set across all y values.
     """
     results = []
+    month_town_index = column_store["month_town_index"]
 
     for x in X_RANGE:
         valid_months_set = get_month_range(x)
-
-        for y in Y_RANGE:
-            best_idx, best_price_sqm = scan(column_store, valid_months_set, y)
-
-            # Skip if no qualifying record found
-            if best_idx is None:
-                continue
-
-            # Skip if above price threshold
-            if best_price_sqm > PRICE_THRESHOLD:
-                continue
-
-            # Round price per sqm to nearest integer
-            rounded_price_sqm = round(best_price_sqm)
-
-            results.append({
-                "xy"         : f"({x}, {y})",
-                "year"       : f"{column_store['year'][best_idx]:04d}",
-                "month"      : f"{column_store['month'][best_idx]:02d}",
-                "town"       : column_store["town"][best_idx],
-                "block"      : column_store["block"][best_idx],
-                "floor_area" : int(column_store["floor_area"][best_idx]),
-                "flat_model" : column_store["flat_model"][best_idx],
-                "lease"      : column_store["lease_commence"][best_idx],
-                "price_sqm"  : rounded_price_sqm,
-            })
+        candidate_indices = get_candidate_indices(month_town_index, valid_months_set)
+        results.extend(run_queries_for_x(column_store, x, candidate_indices))
 
     return results
 
