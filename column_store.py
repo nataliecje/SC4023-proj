@@ -13,7 +13,6 @@ Query Parameters:
 """
 
 import csv
-from datetime import datetime
 
 # ─────────────────────────────────────────────
 # CONFIGURATION (derived from matric U2221398J)
@@ -21,13 +20,8 @@ from datetime import datetime
 
 MATRIC_NUM      = "U2221398J"
 INPUT_FILE      = "ResalePricesSingapore.csv"
-OUTPUT_FILE     = f"ScanResult_{MATRIC_NUM}.csv"
-
-TARGET_YEAR     = 2018
-START_MONTH     = 9          # September
-TOWNS           = {"BUKIT PANJANG", "CLEMENTI", "CHOA CHU KANG", "WOODLANDS", "YISHUN"}
-X_RANGE         = range(1, 9)    # 1 to 8 inclusive
-Y_RANGE         = range(80, 151) # 80 to 150 inclusive
+X_RANGE         = range(1, 9)      # 1 to 8 inclusive
+Y_RANGE         = range(80, 151)   # 80 to 150 inclusive
 PRICE_THRESHOLD = 4725
 
 # Month abbreviation -> integer mapping (handles "Jan-15" style dates)
@@ -36,6 +30,44 @@ MONTH_MAP = {
     "May": 5,  "Jun": 6,  "Jul": 7,  "Aug": 8,
     "Sep": 9,  "Oct": 10, "Nov": 11, "Dec": 12
 }
+
+DIGIT_TO_TOWN = {
+    "0": "BEDOK",
+    "1": "BUKIT PANJANG",
+    "2": "CLEMENTI",
+    "3": "CHOA CHU KANG",
+    "4": "HOUGANG",
+    "5": "JURONG WEST",
+    "6": "PASIR RIS",
+    "7": "TAMPINES",
+    "8": "WOODLANDS",
+    "9": "YISHUN",
+}
+
+
+def derive_query_config(matric_num):
+    """
+    Derives the target year, commencing month, and town list directly from
+    the chosen matriculation number.
+    """
+    digits = [ch for ch in matric_num if ch.isdigit()]
+    if len(digits) < 2:
+        raise ValueError("Matriculation number must contain at least two digits.")
+
+    last_digit = int(digits[-1])
+    target_year = 2020 + last_digit if last_digit <= 4 else 2010 + last_digit
+
+    month_digit = digits[-2]
+    start_month = 10 if month_digit == "0" else int(month_digit)
+    if not 1 <= start_month <= 10:
+        raise ValueError("Commencing month derived from matriculation number is invalid.")
+
+    towns = {DIGIT_TO_TOWN[d] for d in digits}
+    return target_year, start_month, towns
+
+
+TARGET_YEAR, START_MONTH, TOWNS = derive_query_config(MATRIC_NUM)
+OUTPUT_FILE = f"ScanResult_{MATRIC_NUM}.csv"
 
 
 def parse_date(date_str):
@@ -51,43 +83,56 @@ def parse_date(date_str):
 
 def load_column_store(filepath):
     """
-    Reads the CSV file and stores each attribute as a separate list (column).
-    This is the column-oriented (column-store) approach:
-    data is organised by attribute rather than by row.
+    Reads the CSV file and stores the entire input table as separate lists.
+    This keeps the original columns available while still allowing the scan
+    logic to touch only the columns needed for filtering and output.
     Returns a dictionary mapping column name -> list of values.
     """
-    col_year           = []
-    col_month          = []
+    col_month_raw      = []
     col_town           = []
+    col_flat_type      = []
     col_block          = []
+    col_street_name    = []
+    col_storey_range   = []
     col_floor_area     = []
     col_flat_model     = []
     col_lease_commence = []
     col_resale_price   = []
+    col_year           = []
+    col_month          = []
 
     with open(filepath, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            year, month = parse_date(row["month"])
+            month_raw = row["month"].strip()
+            year, month = parse_date(month_raw)
 
-            col_year.append(year)
-            col_month.append(month)
+            col_month_raw.append(month_raw)
             col_town.append(row["town"].strip().upper())
+            col_flat_type.append(row["flat_type"].strip())
             col_block.append(row["block"].strip())
+            col_street_name.append(row["street_name"].strip())
+            col_storey_range.append(row["storey_range"].strip())
             col_floor_area.append(float(row["floor_area_sqm"].strip()))
             col_flat_model.append(row["flat_model"].strip())
             col_lease_commence.append(row["lease_commence_date"].strip())
             col_resale_price.append(float(row["resale_price"].strip()))
+            col_year.append(year)
+            col_month.append(month)
 
     column_store = {
-        "year"           : col_year,
-        "month"          : col_month,
+        "month_raw"      : col_month_raw,
         "town"           : col_town,
+        "flat_type"      : col_flat_type,
         "block"          : col_block,
+        "street_name"    : col_street_name,
+        "storey_range"   : col_storey_range,
         "floor_area"     : col_floor_area,
         "flat_model"     : col_flat_model,
         "lease_commence" : col_lease_commence,
         "resale_price"   : col_resale_price,
+        "year"           : col_year,
+        "month"          : col_month,
     }
 
     print(f"Loaded {len(col_year)} records into column store.")
